@@ -30,11 +30,6 @@ const DEFAULT_LS_BINARY = process.platform === "darwin"
         "/Applications/Antigravity.app/Contents/Resources/bin",
         "language_server"
       )
-    : process.platform === "win32"
-    ? path.join(
-        os.homedir(),
-        "AppData\\Local\\Programs\\Antigravity\\resources\\bin\\language_server.exe"
-      )
     : "/opt/Antigravity/resources/bin/language_server";
 
 // Crash Monitoring Constants

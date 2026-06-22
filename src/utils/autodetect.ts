@@ -67,21 +67,12 @@ export class AutoDetector {
    */
   private async getLanguageServerPids(): Promise<number[]> {
     try {
-      let pids: number[] = [];
-      if (process.platform === "win32") {
-        const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq language_server.exe" /NH');
-        const lines = stdout.trim().split("\n").filter(Boolean);
-        for (const line of lines) {
-          const match = line.match(/language_server\.exe\s+(\d+)/i);
-          if (match) pids.push(parseInt(match[1], 10));
-        }
-      } else {
-        const { stdout } = await execAsync("lsof -nP -iTCP -sTCP:LISTEN | grep language_ | awk '{print $2}'");
-        pids = stdout.trim().split("\n")
-          .filter(Boolean)
-          .map(s => parseInt(s.trim(), 10))
-          .filter(n => !isNaN(n));
-      }
+      // lsof -nP -iTCP -sTCP:LISTEN | grep language_ | awk '{print $2}'
+      const { stdout } = await execAsync("lsof -nP -iTCP -sTCP:LISTEN | grep language_ | awk '{print $2}'");
+      const pids = stdout.trim().split("\n")
+        .filter(Boolean)
+        .map(s => parseInt(s.trim(), 10))
+        .filter(n => !isNaN(n));
 
       return [...new Set(pids)];
     } catch (e) {
@@ -90,22 +81,12 @@ export class AutoDetector {
   }
 
   /**
-   * Extract basic info from process.
+   * Extract basic info from `ps` output (args and lstart).
    */
   private async inspectProcess(pid: number): Promise<ServerInfo | null> {
     try {
-      let argsOut = "";
-      let lstartOut = new Date().toISOString(); // Default to current time for Windows
-
-      if (process.platform === "win32") {
-        const { stdout } = await execAsync(`wmic process where processid=${pid} get commandline /format:list`);
-        argsOut = stdout;
-      } else {
-        const { stdout: macArgsOut } = await execAsync(`ps -p ${pid} -o args=`);
-        const { stdout: macLstartOut } = await execAsync(`LC_ALL=C ps -p ${pid} -o lstart=`);
-        argsOut = macArgsOut;
-        lstartOut = macLstartOut;
-      }
+      const { stdout: argsOut } = await execAsync(`ps -p ${pid} -o args=`);
+      const { stdout: lstartOut } = await execAsync(`LC_ALL=C ps -p ${pid} -o lstart=`);
 
       const portMatch = argsOut.match(/--extension_server_port\s+(\d+)/);
       const csrfMatch = argsOut.match(/--csrf_token\s+([a-f0-9-]+)/);
@@ -130,42 +111,25 @@ export class AutoDetector {
 
   /**
    * Finds the HTTPS port (Connect RPC endpoint) for the given PID.
-   * LS opens ports in order: HTTPS -> HTTP -> LSP.
+   * LS opens ports in order: HTTPS -> HTTP -> LSP, so lowest FD = HTTPS.
    */
   private async findHttpsPort(pid: number): Promise<number | null> {
     try {
-      if (process.platform === "win32") {
-        const { stdout } = await execAsync(`netstat -ano | findstr LISTENING | findstr ${pid}`);
-        const lines = stdout.trim().split("\n").filter(Boolean);
-        const ports: number[] = [];
-        for (const line of lines) {
-          const match = line.match(/TCP\s+[\d\.]+:(\d+)/i);
-          if (match) {
-            ports.push(parseInt(match[1], 10));
-          }
-        }
-        if (ports.length === 0) return null;
-        // The first port opened is usually the HTTPS port.
-        // `netstat` output is not guaranteed to be chronologically ordered by FD like `lsof`.
-        // However, Antigravity uses port 0 and relies on the OS to assign them sequentially in short order.
-        return Math.min(...ports);
-      } else {
-        const { stdout } = await execAsync(`lsof -nP -iTCP -sTCP:LISTEN -a -p ${pid}`);
-        const lines = stdout.trim().split("\n").filter(l => l.includes("LISTEN"));
+      const { stdout } = await execAsync(`lsof -nP -iTCP -sTCP:LISTEN -a -p ${pid}`);
+      const lines = stdout.trim().split("\n").filter(l => l.includes("LISTEN"));
 
-        const entries: { fd: number; port: number }[] = [];
-        for (const line of lines) {
-          const fdMatch = line.match(/\s+(\d+)u\s+IPv/);
-          const portMatch = line.match(/:(\d+)\s+\(LISTEN\)/);
-          if (fdMatch && portMatch) {
-            entries.push({ fd: parseInt(fdMatch[1], 10), port: parseInt(portMatch[1], 10) });
-          }
+      const entries: { fd: number; port: number }[] = [];
+      for (const line of lines) {
+        const fdMatch = line.match(/\s+(\d+)u\s+IPv/);
+        const portMatch = line.match(/:(\d+)\s+\(LISTEN\)/);
+        if (fdMatch && portMatch) {
+          entries.push({ fd: parseInt(fdMatch[1], 10), port: parseInt(portMatch[1], 10) });
         }
-
-        if (entries.length === 0) return null;
-        entries.sort((a, b) => a.fd - b.fd);
-        return entries[0].port;
       }
+
+      if (entries.length === 0) return null;
+      entries.sort((a, b) => a.fd - b.fd);
+      return entries[0].port;
     } catch (e) {
       return null;
     }

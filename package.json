@@ -32,10 +32,8 @@
     "@bufbuild/buf": "^1.65.0",
     "@bufbuild/protoc-gen-es": "^1.10.0",
     "@connectrpc/protoc-gen-connect-es": "^1.6.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^25.2.3",
-    "@types/selfsigned": "^2.0.4",
     "fs-extra": "^11.3.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
@@ -45,8 +43,6 @@
     "@connectrpc/connect": "^1.6.0",
     "@connectrpc/connect-node": "^1.6.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "better-sqlite3": "^12.11.1",
-    "node-pty": "^1.1.0",
-    "selfsigned": "^5.5.0"
+    "node-pty": "^1.1.0"
   }
 }

@@ -42,8 +42,8 @@ import * as https from "https";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { execFileSync } from "child_process";
 import { Launcher } from "../launcher.js";
-import selfsigned from "selfsigned";
 
 const PORT = Number(process.env.PORT) || 8765;
 const WORKSPACE = process.argv[2] || process.cwd();
@@ -81,34 +81,18 @@ function injectShim(html: string): string {
 }
 
 /** Generate a self-signed localhost cert on first run; reuse it afterwards. */
-async function ensureCert(): Promise<{ key: Buffer; cert: Buffer }> {
+function ensureCert(): { key: Buffer; cert: Buffer } {
   const keyPath = path.join(CERT_DIR, "key.pem");
   const certPath = path.join(CERT_DIR, "cert.pem");
   if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
     fs.mkdirSync(CERT_DIR, { recursive: true });
     console.log("[poc] generating self-signed localhost cert…");
-
-    const attrs = [{ name: 'commonName', value: 'localhost' }];
-
-    const notBeforeDate = new Date();
-    const notAfterDate = new Date();
-    notAfterDate.setFullYear(notAfterDate.getFullYear() + 10); // ~3650 days
-
-    const pems = await selfsigned.generate(attrs, {
-        notBeforeDate,
-        notAfterDate,
-        keySize: 2048,
-        extensions: [{
-            name: 'subjectAltName',
-            altNames: [
-                { type: 2, value: 'localhost' },
-                { type: 7, ip: '127.0.0.1' }
-            ]
-        }]
-    });
-
-    fs.writeFileSync(keyPath, pems.private);
-    fs.writeFileSync(certPath, pems.cert);
+    execFileSync("openssl", [
+      "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+      "-keyout", keyPath, "-out", certPath, "-days", "3650",
+      "-subj", "/CN=localhost",
+      "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1",
+    ], { stdio: "ignore" });
   }
   return { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
 }
@@ -124,7 +108,7 @@ async function main() {
   console.log(`[poc] LS ready: HTTPS ${upstreamPort}, csrf ${csrf.slice(0, 8)}…`);
 
   const shimSource = fs.readFileSync(SHIM_FILE);
-  const { key, cert } = await ensureCert();
+  const { key, cert } = ensureCert();
 
   // Many concurrent infinite streams fan out to many upstream sockets.
   const agent = new https.Agent({ rejectUnauthorized: false, maxSockets: Infinity, keepAlive: true });

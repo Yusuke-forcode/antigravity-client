@@ -4,15 +4,13 @@
  * Provides OAuth tokens and USS data needed by the Mock Extension Server
  * and the Launcher to authenticate independent LS instances.
  */
+import { execSync } from "child_process";
 import { homedir } from "os";
 import * as path from "path";
-import Database from "better-sqlite3";
 import { Topic } from "../gen/exa/unified_state_sync_pb/unified_state_sync_pb.js";
 
 const STATE_DB_PATH = process.platform === "darwin"
     ? path.join(homedir(), "Library/Application Support/Antigravity/User/globalStorage/state.vscdb")
-    : process.platform === "win32"
-    ? path.join(homedir(), "AppData/Roaming/Antigravity/User/globalStorage/state.vscdb")
     : path.join(homedir(), ".config/Antigravity/User/globalStorage/state.vscdb");
 
 export interface UssOAuthData {
@@ -32,16 +30,11 @@ export interface AuthData {
  */
 export function readAuthStatus(): { apiKey: string; email: string; name: string } {
     try {
-        const db = new Database(STATE_DB_PATH, { readonly: true });
-        const stmt = db.prepare("SELECT value FROM ItemTable WHERE key='antigravityAuthStatus'");
-        const row = stmt.get() as { value: string } | undefined;
-        db.close();
-
-        if (!row || !row.value) {
-            return { apiKey: "", email: "", name: "" };
-        }
-
-        const parsed = JSON.parse(row.value);
+        const result = execSync(
+            `sqlite3 "${STATE_DB_PATH}" "SELECT value FROM ItemTable WHERE key='antigravityAuthStatus'"`,
+            { encoding: "utf8" }
+        ).trim();
+        const parsed = JSON.parse(result);
         return {
             apiKey: parsed.apiKey || "",
             email: parsed.email || "",
@@ -58,16 +51,12 @@ export function readAuthStatus(): { apiKey: string; email: string; name: string 
  */
 export function readUssOAuthData(): UssOAuthData {
     try {
-        const db = new Database(STATE_DB_PATH, { readonly: true });
-        const stmt = db.prepare("SELECT value FROM ItemTable WHERE key='antigravityUnifiedStateSync.oauthToken'");
-        const row = stmt.get() as { value: string } | undefined;
-        db.close();
+        const raw = execSync(
+            `sqlite3 "${STATE_DB_PATH}" "SELECT value FROM ItemTable WHERE key='antigravityUnifiedStateSync.oauthToken'"`,
+            { encoding: "utf8" }
+        ).trim();
 
-        if (!row || !row.value) {
-            return { key: "oauthTokenInfoSentinelKey", value: "" };
-        }
-
-        const topicBytes = Buffer.from(row.value, "base64");
+        const topicBytes = Buffer.from(raw, "base64");
         const topic = Topic.fromBinary(topicBytes);
 
         if (topic.data.length > 0) {
